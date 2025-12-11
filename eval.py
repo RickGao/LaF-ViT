@@ -14,8 +14,8 @@ args = parser.parse_args()
 
 
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Running on device: {device}")
     # 1. 加载模型
     print(f"Loading model from {args.model_path}...")
     model = LaFViT(pretrained=False)  # 推理不需要下载预训练权重
