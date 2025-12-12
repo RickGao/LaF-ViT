@@ -105,7 +105,7 @@ def main():
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
-    stage1_epochs = int(args.epochs * 0.27)
+    stage1_epochs = 8
     stage2_epochs = args.epochs - stage1_epochs
 
     logger.info("=" * 40)
