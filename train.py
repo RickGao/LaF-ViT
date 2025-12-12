@@ -10,14 +10,19 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from dataset import UTKFaceDataset, train_transforms, val_transforms
 from model import LaFViT
 from tqdm import tqdm
+import logging
+import sys
+from datetime import datetime  # <--- 新增 import
 
-parser = argparse.ArgumentParser(description='LaFViT Training')
-parser.add_argument('--data_dir', type=str, default='./data/UTKFace')
-parser.add_argument('--epochs', type=int, default=30)
-parser.add_argument('--batch_size', type=int, default=32)
-parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--seed', type=int, default=42, help='必须固定Seed以保证Eval能找到对应的Val集')
-parser.add_argument('--save_dir', type=str, default='./checkpoints')
+# ==========================================
+# 1. 命令行参数配置
+# ==========================================
+parser = argparse.ArgumentParser(description='LaFViT Training with Timestamp Logging')
+parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
+parser.add_argument('--epochs', type=int, default=30, help='训练总轮数')
+parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
+parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
+parser.add_argument('--seed', type=int, default=42, help='随机种子')
 parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
 args = parser.parse_args()
 
