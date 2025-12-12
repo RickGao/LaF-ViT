@@ -40,9 +40,17 @@ class LaFViT(nn.Module):
         # Age Head
         combined_dim = self.age_dim + 2 + 5
         self.age_head = nn.Sequential(
-            nn.Linear(combined_dim, 256),
-            nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(256, 1)
+            nn.Linear(combined_dim, 512),  # 第一层变宽
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+
+            nn.Linear(512, 256),  # 增加一层中间层
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+
+            nn.Linear(256, 1)  # 输出层
         )
 
     def forward(self, x, stage="stage2"):

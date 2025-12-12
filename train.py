@@ -12,16 +12,16 @@ from model import LaFViT
 from tqdm import tqdm
 import logging
 import sys
-from datetime import datetime  # <--- 新增 import
+from datetime import datetime
 
 # ==========================================
 # 1. 命令行参数配置
 # ==========================================
-parser = argparse.ArgumentParser(description='LaFViT Training with Timestamp Logging')
+parser = argparse.ArgumentParser(description='LaFViT Training (Weighted + Norm + DiffLR)')
 parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
 parser.add_argument('--epochs', type=int, default=30, help='训练总轮数')
 parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
-parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
+parser.add_argument('--lr', type=float, default=1e-4, help='Stage 1 的初始学习率')
 parser.add_argument('--seed', type=int, default=42, help='随机种子')
 parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
 args = parser.parse_args()
@@ -32,32 +32,23 @@ args = parser.parse_args()
 # ==========================================
 def setup_logger(log_dir):
     """配置 Logger，文件名带时间戳"""
-    # 确保 log 文件夹存在
     os.makedirs(log_dir, exist_ok=True)
-
-    # 获取当前时间，格式: YYYYMMDD_HHMMSS (例如: 20231212_120000)
     current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_filename = f'train_log_{current_time}.txt'
-
     log_path = os.path.join(log_dir, log_filename)
 
-    # 创建 logger
     logger = logging.getLogger("LaFViT")
     logger.setLevel(logging.INFO)
 
-    # 避免重复添加 handler
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # 格式
     formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-    # Handler 1: 文件 (File) -> 存入 log 文件夹
     file_handler = logging.FileHandler(log_path)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-    # Handler 2: 屏幕 (Stream/Console)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
@@ -91,7 +82,10 @@ def validate(model, loader, device, stage):
             correct_race += (torch.argmax(r_logits, 1) == races).sum().item()
 
             if stage == "stage2":
-                total_mae += torch.sum(torch.abs(age_pred - ages)).item()
+                # 🔥【改动点A】: 验证时需要还原年龄
+                # 模型输出是 0.3 -> 还原成 30 岁
+                pred_age_real = age_pred * 100.0
+                total_mae += torch.sum(torch.abs(pred_age_real - ages)).item()
             else:
                 total_mae = 99.9
     return (total_mae / count), (correct_gen / count), (correct_race / count)
@@ -102,16 +96,11 @@ def validate(model, loader, device, stage):
 # ==========================================
 def main():
     # --- Step A: 设置环境 ---
-
-    # 1. 设置路径
-    log_dir = './log'  # 日志文件夹
-    ckpt_dir = args.save_dir  # 权重文件夹
-
+    log_dir = './log'
+    ckpt_dir = args.save_dir
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    # 2. 初始化 Logger (文件名带时间了)
     logger, log_path = setup_logger(log_dir)
-
     set_seed(args.seed)
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -121,10 +110,9 @@ def main():
 
     logger.info("=" * 40)
     logger.info(f"🚀 Training LaFViT | Device: {device} | Seed: {args.seed}")
-    logger.info(f"📂 Log saved to: {log_path}")  # 这里会打印出具体带时间的文件名
-    logger.info(f"💾 Checkpoints saved to: {ckpt_dir}")
-    logger.info(
-        f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs}), Batch={args.batch_size}, LR={args.lr}")
+    logger.info(f"📂 Log saved to: {log_path}")
+    logger.info(f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
+    logger.info(f"✨ Enhancements: RaceWeights(1,1,1,2,3), AgeNorm(/100), DiffLR(x4)")
     logger.info("=" * 40)
 
     # --- Step B: 数据集加载 ---
@@ -148,8 +136,16 @@ def main():
     logger.info("🧠 Initializing LaFViT (Small + Base)...")
     model = LaFViT(pretrained=True).to(device)
 
+    # ==========================================
+    # 🔥【改动点B】: Loss 配置
+    # ==========================================
     criterion_age = nn.MSELoss()
-    criterion_cls = nn.CrossEntropyLoss()
+    criterion_gender = nn.CrossEntropyLoss()
+
+    # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
+    # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
+    race_weights = torch.tensor([1.0, 1.0, 1.0, 2.0, 3.0]).to(device)
+    criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
     # 初始优化器 (Stage 1)
     optimizer = optim.AdamW([
@@ -171,15 +167,19 @@ def main():
         # --- 阶段切换逻辑 ---
         if epoch < stage1_epochs:
             stage = "stage1"
-            # 确保 Base 冻结
+            # 冻结 Base, 激活 Small
             for p in model.age_backbone.parameters(): p.requires_grad = False
             for p in model.age_head.parameters(): p.requires_grad = False
-            # 确保 Small 激活
             for p in model.demo_backbone.parameters(): p.requires_grad = True
 
         elif epoch == stage1_epochs:
             logger.info("🧊 Switch to Stage 2: Freezing Small, Training Base...")
             stage = "stage2"
+
+            # 强制 Small 进入 eval 模式，防止 BN 统计漂移
+            model.demo_backbone.eval()
+            model.gender_head.eval()
+            model.race_head.eval()
 
             # 冻结 Small
             for p in model.demo_backbone.parameters(): p.requires_grad = False
@@ -190,38 +190,57 @@ def main():
             for p in model.age_backbone.parameters(): p.requires_grad = True
             for p in model.age_head.parameters(): p.requires_grad = True
 
+            # ==========================================
+            # 🔥【改动点C】: 差异化学习率 (Differential LR)
+            # ==========================================
+            # Backbone 慢一点 (1e-5), Head 快 4 倍 (4e-5)
             optimizer = optim.AdamW([
-                {'params': model.age_backbone.parameters()},
-                {'params': model.age_head.parameters()}
-            ], lr=args.lr)
+                {'params': model.age_backbone.parameters(), 'lr': 1e-5},
+                {'params': model.age_head.parameters(), 'lr': 4e-5}
+            ], weight_decay=1e-2)
 
             scheduler = CosineAnnealingLR(optimizer, T_max=stage2_epochs, eta_min=1e-6)
         else:
             stage = "stage2"
+            # 保持 Small 为 eval 模式
+            model.demo_backbone.eval()
+            model.gender_head.eval()
+            model.race_head.eval()
 
         # --- Tqdm 循环 ---
         loop = tqdm(train_loader, desc=f"Ep {epoch + 1}/{args.epochs} [{stage}]")
+
         for batch in loop:
             imgs = batch['image'].to(device)
             ages = batch['age'].to(device).view(-1, 1)
             genders = batch['gender'].to(device)
             races = batch['race'].to(device)
 
+            # ==========================================
+            # 🔥【改动点D】: 年龄归一化 (Age Normalization)
+            # ==========================================
+            if stage == "stage2":
+                ages_target = ages / 100.0  # [0, 100] -> [0.0, 1.0]
+            else:
+                ages_target = ages  # stage1 不用 age，无所谓
+
             optimizer.zero_grad()
             age_pred, g_logits, r_logits = model(imgs, stage=stage)
 
             if stage == "stage1":
-                loss = criterion_cls(g_logits, genders) + criterion_cls(r_logits, races)
+                # 分类任务: 包含了加权的 Race Loss
+                loss = criterion_gender(g_logits, genders) + criterion_race(r_logits, races)
                 d_val = 0.0
             else:
-                loss = criterion_age(age_pred, ages)
+                # 回归任务: 拟合归一化后的年龄
+                loss = criterion_age(age_pred, ages_target)
                 d_val = loss.item()
 
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
 
-            # 进度条显示 (只在屏幕显示)
+            # 进度条显示
             with torch.no_grad():
                 acc_g = (torch.argmax(g_logits, 1) == genders).float().mean()
                 acc_r = (torch.argmax(r_logits, 1) == races).float().mean()
@@ -229,25 +248,21 @@ def main():
 
         if scheduler: scheduler.step()
 
-        # --- 验证与日志记录 ---
+        # --- 验证与日志 ---
         val_mae, val_gen, val_race = validate(model, val_loader, device, stage)
         avg_train_loss = total_loss / len(train_loader)
 
-        # 📝 核心日志：写入文件和屏幕
         logger.info(
             f"Epoch {epoch + 1:02d} Report | Train Loss: {avg_train_loss:.4f} | Val MAE: {val_mae:.4f} | Gen Acc: {val_gen:.2%} | Race Acc: {val_race:.2%}")
 
-        # --- 保存逻辑 ---
-        # 始终保存最新的
+        # --- 保存 ---
         torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_latest.pth'))
 
-        # 只在 Stage 2 保存最好的
         if stage == "stage2" and val_mae < best_val_mae:
             best_val_mae = val_mae
             torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_best.pth'))
             logger.info(f"  🌟 New Best Model Saved! (MAE: {best_val_mae:.4f})")
 
-        # 每2轮保存一个断点
         if (epoch + 1) % 2 == 0:
             ckpt_name = f'laf_vit_epoch_{epoch + 1}.pth'
             torch.save(model.state_dict(), os.path.join(ckpt_dir, ckpt_name))
