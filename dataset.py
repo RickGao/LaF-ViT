@@ -80,10 +80,20 @@ class UTKFaceDataset(Dataset):
 
 # 训练集 Transform: 加入数据增强
 train_transforms = transforms.Compose([
-    transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC),  # 强制 224x224
-    transforms.RandomHorizontalFlip(),  # 随机翻转，增加鲁棒性
+    # 1. 随机裁剪并缩放 (防止背诵背景)
+    # scale=(0.95, 1.0): 稍微放大一点点
+    transforms.RandomResizedCrop(224, scale=(0.95, 1.0), ratio=(0.95, 1.05)),
+
+    # 2. 随机水平翻转 (标准操作)
+    transforms.RandomHorizontalFlip(),
+
+    # 3. [新增] 随机旋转 +/- 10度 (模拟歪头)
+    # 放在 Crop 后面或者前面都可以，放在这里比较常见
+    transforms.RandomRotation(degrees=10),
+
+    # 4. 转 Tensor 和 归一化 (保留)
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # ImageNet 标准归一化
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 # 测试/验证集 Transform: 只做 Resize 和 Normalize

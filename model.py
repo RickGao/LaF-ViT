@@ -13,13 +13,23 @@ class LaFViT(nn.Module):
         # =========================================================
 
         # --- Stream A: Demographic (ViT-Small) ---
-        # 负责 Gender/Race
-        self.demo_backbone = timm.create_model('vit_small_patch16_224', pretrained=pretrained, num_classes=0)
+        # drop_path_rate=0.1: 给小模型一点点正则化
+        self.demo_backbone = timm.create_model(
+            'vit_small_patch16_224',
+            pretrained=pretrained,
+            num_classes=0,
+            drop_path_rate=0.1  # <--- 新增
+        )
         self.demo_dim = 384
 
         # --- Stream B: Age (ViT-Base) ---
-        # 负责 Age (主力)
-        self.age_backbone = timm.create_model('vit_base_patch16_224', pretrained=pretrained, num_classes=0)
+        # drop_path_rate=0.2: 给大模型强力的正则化 (20%概率丢层)
+        self.age_backbone = timm.create_model(
+            'vit_base_patch16_224',
+            pretrained=pretrained,
+            num_classes=0,
+            drop_path_rate=0.2  # <--- 新增 (这非常关键！)
+        )
         self.age_dim = 768
 
         # =========================================================

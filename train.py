@@ -144,7 +144,7 @@ def main():
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
     # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
-    race_weights = torch.tensor([1.0, 1.0, 1.0, 2.0, 3.0]).to(device)
+    race_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 3.0]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
     # 初始优化器 (Stage 1)
@@ -190,14 +190,12 @@ def main():
             for p in model.age_backbone.parameters(): p.requires_grad = True
             for p in model.age_head.parameters(): p.requires_grad = True
 
-            # ==========================================
-            # 🔥【改动点C】: 差异化学习率 (Differential LR)
-            # ==========================================
-            # Backbone 慢一点 (1e-5), Head 快 4 倍 (4e-5)
             optimizer = optim.AdamW([
+                # Backbone: 1e-5
                 {'params': model.age_backbone.parameters(), 'lr': 1e-5},
+                # Head: 4e-5
                 {'params': model.age_head.parameters(), 'lr': 4e-5}
-            ], weight_decay=1e-2)
+            ], weight_decay=0.05)  # <--- 从 1e-2 改成 0.05，增强约束
 
             scheduler = CosineAnnealingLR(optimizer, T_max=stage2_epochs, eta_min=1e-6)
         else:
