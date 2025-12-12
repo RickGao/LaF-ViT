@@ -12,7 +12,7 @@ from tqdm import tqdm  # 引入 tqdm
 parser = argparse.ArgumentParser(description='Train LaF-ViT')
 parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集路径')
 parser.add_argument('--epochs', type=int, default=20, help='训练轮数')
-parser.add_argument('--batch_size', type=int, default=32, help='Batch Size')
+parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
 parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
 parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
 args = parser.parse_args()
