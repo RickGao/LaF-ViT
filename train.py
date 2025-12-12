@@ -191,13 +191,28 @@ def main():
         print(f"  Val Race   : {val_race_acc * 100:.2f}%")
 
         # 保存最新模型
-        torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_latest.pth'))
+        # torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_latest.pth'))
 
+        if (epoch + 1) % 2 == 0:
+            ckpt = {
+                'epoch': epoch + 1,
+                'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'best_val_mae': best_val_mae,
+                'args': vars(args)
+            }
+            torch.save(
+                ckpt,
+                os.path.join(args.save_dir, f'laf_vit_epoch_{epoch + 1}.pth')
+            )
+        
         # 保存 Best Model (Warm-up 之后才开始选)
         if epoch >= 5 and val_mae < best_val_mae:
             best_val_mae = val_mae
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_best.pth'))
             print("  🌟 New Best Model Saved!")
+
+
 
     print("🎉 Training Complete.")
 
