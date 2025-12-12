@@ -6,45 +6,33 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from dataset import UTKFaceDataset, train_transforms, val_transforms
-from model import LaFViT
+from model import LaFViT  # <--- 类名已改
 from tqdm import tqdm
 
-# ==========================================
-# 1. 命令行参数配置
-# ==========================================
-parser = argparse.ArgumentParser(description='Train LaF-ViT (MSE + Uniform Weights)')
-parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
-parser.add_argument('--epochs', type=int, default=20, help='训练总轮数')
-parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
-parser.add_argument('--lr', type=float, default=1e-4, help='学习率')
-parser.add_argument('--seed', type=int, default=42, help='随机种子')
-parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
+parser = argparse.ArgumentParser(description='LaFViT Training')
+parser.add_argument('--data_dir', type=str, default='./data/UTKFace')
+parser.add_argument('--epochs', type=int, default=30)
+parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--seed', type=int, default=42, help='必须固定Seed以保证Eval能找到对应的Val集')
+parser.add_argument('--save_dir', type=str, default='./checkpoints')
 args = parser.parse_args()
 
 
-# ==========================================
-# 2. 辅助函数
-# ==========================================
 def set_seed(seed):
-    """固定所有随机种子，保证 Split 和 初始化一致"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
-def validate(model, loader, device):
-    """验证函数：计算验证集上的 Age MAE 和 分类 Accuracy"""
+def validate(model, loader, device, stage):
     model.eval()
-    total_age_ae = 0
-    correct_gender = 0
-    correct_race = 0
-    total_samples = 0
-
+    total_mae, correct_gen, correct_race, count = 0, 0, 0, 0
     with torch.no_grad():
         for batch in loader:
             imgs = batch['image'].to(device)
@@ -52,169 +40,149 @@ def validate(model, loader, device):
             genders = batch['gender'].to(device)
             races = batch['race'].to(device)
 
-            # Forward pass
-            age_pred, gender_logits, race_logits = model(imgs)
+            age_pred, g_logits, r_logits = model(imgs, stage=stage)
 
-            # 1. Age MAE (即使训练用 MSE，验证时看 MAE 更直观)
-            total_age_ae += torch.sum(torch.abs(age_pred - ages)).item()
+            count += len(imgs)
+            correct_gen += (torch.argmax(g_logits, 1) == genders).sum().item()
+            correct_race += (torch.argmax(r_logits, 1) == races).sum().item()
 
-            # 2. Gender Acc
-            gender_preds = torch.argmax(gender_logits, dim=1)
-            correct_gender += (gender_preds == genders).sum().item()
-
-            # 3. Race Acc
-            race_preds = torch.argmax(race_logits, dim=1)
-            correct_race += (race_preds == races).sum().item()
-
-            total_samples += len(imgs)
-
-    avg_mae = total_age_ae / total_samples
-    avg_gender_acc = correct_gender / total_samples
-    avg_race_acc = correct_race / total_samples
-
-    return avg_mae, avg_gender_acc, avg_race_acc
+            if stage == "stage2":
+                total_mae += torch.sum(torch.abs(age_pred - ages)).item()
+            else:
+                total_mae = 99.9
+    return (total_mae / count), (correct_gen / count), (correct_race / count)
 
 
-# ==========================================
-# 3. 主程序
-# ==========================================
 def main():
-    # --- Step A: 设置环境 ---
-    set_seed(args.seed)
+    set_seed(args.seed)  # 1. 固定随机种子
     os.makedirs(args.save_dir, exist_ok=True)
-
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    print("=" * 40)
-    print(f"🚀 Start Training | Device: {device} | Seed: {args.seed}")
-    print("=" * 40)
 
-    # --- Step B: 数据集加载与划分 ---
-    # 定义 Generator 保证切分索引一致
-    split_generator = torch.Generator().manual_seed(args.seed)
+    stage1_epochs = int(args.epochs * 0.2)
+    stage2_epochs = args.epochs - stage1_epochs
 
-    # 临时加载以计算长度
-    temp_dataset = UTKFaceDataset(args.data_dir, transform=None)
-    train_size = int(0.9 * len(temp_dataset))
-    val_size = len(temp_dataset) - train_size
+    print(f"🚀 Training LaFViT | Seed: {args.seed} | Device: {device}")
 
-    # 分别实例化并切分 (Train用增强，Val用标准)
+    # 2. 数据划分 (90% Train / 10% Val)
+    # 使用 Generator 确保每次划分一致
+    gen = torch.Generator().manual_seed(args.seed)
+
+    # 先加载一次获取总长度
+    temp_ds = UTKFaceDataset(args.data_dir, transform=None)
+    train_len = int(0.9 * len(temp_ds))
+    val_len = len(temp_ds) - train_len
+
+    # 分别加载带不同 transform 的数据集
     train_ds_full = UTKFaceDataset(args.data_dir, transform=train_transforms)
     val_ds_full = UTKFaceDataset(args.data_dir, transform=val_transforms)
 
-    train_subset, _ = random_split(train_ds_full, [train_size, val_size], generator=split_generator)
-    _, val_subset = random_split(val_ds_full, [train_size, val_size], generator=split_generator)
+    # 切分
+    train_subset, _ = random_split(train_ds_full, [train_len, val_len], generator=gen)
+    _, val_subset = random_split(val_ds_full, [train_len, val_len], generator=gen)
 
     train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    # --- Step C: 模型与优化器 ---
-    print("🧠 Initializing LaF-ViT (Pretrained)...")
+    print(f"📊 Split: Train={len(train_subset)} (90%), Val={len(val_subset)} (10%)")
+
+    # 3. 初始化模型
     model = LaFViT(pretrained=True).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-2)
 
-    # --- Step D: 损失函数配置 (已按要求修改) ---
-
-    # 1. Age: 使用 MSELoss
     criterion_age = nn.MSELoss()
+    criterion_cls = nn.CrossEntropyLoss()
 
-    # 2. Gender: 标准交叉熵
-    criterion_gender = nn.CrossEntropyLoss()
+    # 初始优化器 (Stage 1)
+    optimizer = optim.AdamW([
+        {'params': model.demo_backbone.parameters()},
+        {'params': model.gender_head.parameters()},
+        {'params': model.race_head.parameters()}
+    ], lr=args.lr)
 
-    # 3. Race: 标准交叉熵 (移除了 race_weights，所有种族一视同仁)
-    criterion_race = nn.CrossEntropyLoss()
-
+    scheduler = None
     best_val_mae = float('inf')
-
-    # --- Step E: 训练循环 ---
-    print("🔥 Start Training Loop (MSE + Uniform Weights)...")
 
     for epoch in range(args.epochs):
         model.train()
-        total_loss = 0
 
-        # === 课程学习策略 ===
-        if epoch < 5:
-            phase = "Warm-up"
-            # 补课阶段：关掉 Age (w=0)，只练分类
-            w_age, w_gender, w_race = 0.0, 1.0, 1.0
+        # --- 阶段切换 ---
+        if epoch < stage1_epochs:
+            stage = "stage1"
+            # 冻结 Base
+            for p in model.age_backbone.parameters(): p.requires_grad = False
+            for p in model.age_head.parameters(): p.requires_grad = False
+            # 解冻 Small
+            for p in model.demo_backbone.parameters(): p.requires_grad = True
+
+        elif epoch == stage1_epochs:
+            print("\n🧊 Switch to Stage 2: Freezing Small, Training Base...")
+            stage = "stage2"
+
+            # 冻结 Small
+            for p in model.demo_backbone.parameters(): p.requires_grad = False
+            for p in model.gender_head.parameters(): p.requires_grad = False
+            for p in model.race_head.parameters(): p.requires_grad = False
+
+            # 解冻 Base
+            for p in model.age_backbone.parameters(): p.requires_grad = True
+            for p in model.age_head.parameters(): p.requires_grad = True
+
+            optimizer = optim.AdamW([
+                {'params': model.age_backbone.parameters()},
+                {'params': model.age_head.parameters()}
+            ], lr=args.lr)
+
+            scheduler = CosineAnnealingLR(optimizer, T_max=stage2_epochs, eta_min=1e-6)
+
         else:
-            phase = "Joint"
-            # 联合阶段：
-            # MSE 数值很大 (例如 50~100)，CrossEntropy 只有 ~1.0
-            # 所以给 Age 乘 0.1，让它变成 5~10，与分类 Loss 保持在同一个量级
-            w_age = 0.1
-            w_gender = 1.0
-            w_race = 1.0
+            stage = "stage2"
 
-        loop = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs} [{phase}]")
-
+        # --- 训练循环 ---
+        loop = tqdm(train_loader, desc=f"Ep {epoch + 1}/{args.epochs} [{stage}]")
         for batch in loop:
             imgs = batch['image'].to(device)
-            ages = batch['age'].to(device).view(-1, 1)  # MSE 需要 float
+            ages = batch['age'].to(device).view(-1, 1)
             genders = batch['gender'].to(device)
             races = batch['race'].to(device)
 
             optimizer.zero_grad()
+            age_pred, g_logits, r_logits = model(imgs, stage=stage)
 
-            # Forward
-            age_pred, gender_logits, race_logits = model(imgs)
-
-            # Calculate Losses
-            l_age = criterion_age(age_pred, ages)  # MSE
-            l_gender = criterion_gender(gender_logits, genders)
-            l_race = criterion_race(race_logits, races)
-
-            # Weighted Sum
-            loss = (w_age * l_age) + (w_gender * l_gender) + (w_race * l_race)
+            if stage == "stage1":
+                loss = criterion_cls(g_logits, genders) + criterion_cls(r_logits, races)
+                d_val = 0.0
+            else:
+                loss = criterion_age(age_pred, ages)
+                d_val = loss.item()
 
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
 
-            # 实时显示 (注意：这里的 age 显示的是原始 MSE 值)
-            loop.set_postfix(
-                loss=loss.item(),
-                mse=l_age.item(),
-                gen=l_gender.item(),
-                race=l_race.item()
-            )
+            with torch.no_grad():
+                acc_g = (torch.argmax(g_logits, 1) == genders).float().mean()
+                acc_r = (torch.argmax(r_logits, 1) == races).float().mean()
+            loop.set_postfix(loss=loss.item(), mse=d_val, g=f"{acc_g:.2f}", r=f"{acc_r:.2f}")
 
-        # === Epoch 结束: 验证 ===
-        val_mae, val_gender_acc, val_race_acc = validate(model, val_loader, device)
+        if scheduler: scheduler.step()
 
-        # 打印报告
-        print(f"Epoch {epoch + 1} Report:")
-        print(f"  Train Loss : {total_loss / len(train_loader):.4f}")
-        print(f"  Val Age MAE: {val_mae:.4f}")
-        print(f"  Val Gender : {val_gender_acc * 100:.2f}%")
-        print(f"  Val Race   : {val_race_acc * 100:.2f}%")
+        # --- 验证 ---
+        val_mae, val_gen, val_race = validate(model, val_loader, device, stage)
+        print(f"  Val: AgeMAE={val_mae:.4f} | Gen={val_gen:.1%} | Race={val_race:.1%}")
 
-        # 保存最新模型
-        # torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_latest.pth'))
+        # --- 保存逻辑 (Best + Checkpoint) ---
+        torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_latest.pth'))
 
-        if (epoch + 1) % 2 == 0:
-            ckpt = {
-                'epoch': epoch + 1,
-                'model_state': model.state_dict(),
-                'optimizer_state': optimizer.state_dict(),
-                'best_val_mae': best_val_mae,
-                'args': vars(args)
-            }
-            torch.save(
-                ckpt,
-                os.path.join(args.save_dir, f'laf_vit_epoch_{epoch + 1}.pth')
-            )
-        
-        # 保存 Best Model (Warm-up 之后才开始选)
-        if epoch >= 5 and val_mae < best_val_mae:
+        # 1. 保存 Best (Stage 2)
+        if stage == "stage2" and val_mae < best_val_mae:
             best_val_mae = val_mae
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'laf_vit_best.pth'))
-            print("  🌟 New Best Model Saved!")
+            print("  🌟 New Best Saved!")
 
-
-
-    print("🎉 Training Complete.")
+        # 2. 每两个 Epoch 保存一次 Checkpoint
+        if (epoch + 1) % 2 == 0:
+            ckpt_name = f'laf_vit_epoch_{epoch + 1}.pth'
+            torch.save(model.state_dict(), os.path.join(args.save_dir, ckpt_name))
+            # print(f"  💾 Checkpoint saved: {ckpt_name}")
 
 
 if __name__ == "__main__":
