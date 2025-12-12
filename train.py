@@ -112,7 +112,6 @@ def main():
     logger.info(f"🚀 Training LaFViT | Device: {device} | Seed: {args.seed}")
     logger.info(f"📂 Log saved to: {log_path}")
     logger.info(f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
-    logger.info(f"✨ Enhancements: RaceWeights(1,1,1,2,3), AgeNorm(/100), DiffLR(x4)")
     logger.info("=" * 40)
 
     # --- Step B: 数据集加载 ---
@@ -143,8 +142,7 @@ def main():
     criterion_gender = nn.CrossEntropyLoss()
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
-    # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
-    race_weights = torch.tensor([1.0, 1.0, 1.0, 2.0, 4.0]).to(device)
+    race_weights = torch.tensor([1.0, 1.0, 1.0, 1.5, 4.5]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
     # 初始优化器 (Stage 1)
