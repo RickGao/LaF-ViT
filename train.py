@@ -142,7 +142,6 @@ def main():
     criterion_gender = nn.CrossEntropyLoss()
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
-    # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
     race_weights = torch.tensor([1.0, 1.0, 1.25, 1.2, 7.5]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
