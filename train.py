@@ -144,7 +144,7 @@ def main():
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
     # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
-    race_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 3.0]).to(device)
+    race_weights = torch.tensor([1.0, 1.0, 1.0, 2.0, 4.0]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
     # 初始优化器 (Stage 1)
@@ -227,8 +227,13 @@ def main():
 
             if stage == "stage1":
                 # 分类任务: 包含了加权的 Race Loss
-                loss = criterion_gender(g_logits, genders) + criterion_race(r_logits, races)
+                loss_g = criterion_gender(g_logits, genders)
+                loss_r = criterion_race(r_logits, races)
+
+                loss = 1.0 * loss_g + 1.5 * loss_r
+
                 d_val = 0.0
+                
             else:
                 # 回归任务: 拟合归一化后的年龄
                 loss = criterion_age(age_pred, ages_target)
