@@ -105,7 +105,7 @@ def main():
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
-    stage1_epochs = int(args.epochs * 0.2)
+    stage1_epochs = int(args.epochs * 0.27)
     stage2_epochs = args.epochs - stage1_epochs
 
     logger.info("=" * 40)
@@ -142,7 +142,8 @@ def main():
     criterion_gender = nn.CrossEntropyLoss()
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
-    race_weights = torch.tensor([1.0, 1.0, 1.0, 1.5, 4.5]).to(device)
+    # 策略: White/Black/Asian=1.0, Indian=2.0, Others=3.0
+    race_weights = torch.tensor([1.0, 1.0, 1.25, 1.2, 7.5]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
     # 初始优化器 (Stage 1)
@@ -228,7 +229,7 @@ def main():
                 loss_g = criterion_gender(g_logits, genders)
                 loss_r = criterion_race(r_logits, races)
 
-                loss = 1.0 * loss_g + 1.5 * loss_r
+                loss = 0.5 * loss_g + 2.0 * loss_r
 
                 d_val = 0.0
 
