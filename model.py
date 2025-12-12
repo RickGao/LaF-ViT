@@ -18,7 +18,7 @@ class LaFViT(nn.Module):
             'vit_small_patch16_224',
             pretrained=pretrained,
             num_classes=0,
-            drop_path_rate=0.1  # <--- 新增
+            # drop_path_rate=0.1  # <--- 新增
         )
         self.demo_dim = 384
 

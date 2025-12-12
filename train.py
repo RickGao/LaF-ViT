@@ -233,7 +233,7 @@ def main():
                 loss = 1.0 * loss_g + 1.5 * loss_r
 
                 d_val = 0.0
-                
+
             else:
                 # 回归任务: 拟合归一化后的年龄
                 loss = criterion_age(age_pred, ages_target)
