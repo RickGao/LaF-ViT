@@ -133,7 +133,8 @@ def main():
 
     # --- Step C: 模型初始化 ---
     logger.info("🧠 Initializing LaFViT (Small + Base)...")
-    model = LaFViT(pretrained=True).to(device)
+    logger.info("Hard Condition")
+    model = LaFViT(pretrained=True, use_hard_conditioning=True).to(device)
 
     # ==========================================
     # 🔥【改动点B】: Loss 配置
