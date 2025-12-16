@@ -138,7 +138,8 @@ def main():
     # ==========================================
     # 🔥【改动点B】: Loss 配置
     # ==========================================
-    criterion_age = nn.MSELoss()
+    # criterion_age = nn.MSELoss()
+    criterion_age = nn.L1Loss()
     criterion_gender = nn.CrossEntropyLoss()
 
     # Race Class Weights: 0:White, 1:Black, 2:Asian, 3:Indian, 4:Others
