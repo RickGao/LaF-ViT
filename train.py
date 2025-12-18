@@ -174,17 +174,15 @@ def main():
                 {'params': model.age_backbone.parameters(), 'lr': 1e-5},
                 # Head: 4e-5
                 {'params': model.age_head.parameters(), 'lr': 4e-5}
-            ], weight_decay=0.05)  # <--- 从 1e-2 改成 0.05，增强约束
+            ], weight_decay=0.05)
 
             scheduler = CosineAnnealingLR(optimizer, T_max=stage2_epochs, eta_min=1e-6)
         else:
             stage = "stage2"
-            # 保持 Small 为 eval 模式
             model.demo_backbone.eval()
             model.gender_head.eval()
             model.race_head.eval()
 
-        # --- Tqdm 循环 ---
         loop = tqdm(train_loader, desc=f"Ep {epoch + 1}/{args.epochs} [{stage}]")
 
         for batch in loop:
@@ -193,19 +191,16 @@ def main():
             genders = batch['gender'].to(device)
             races = batch['race'].to(device)
 
-            # ==========================================
-            # 🔥【改动点D】: 年龄归一化 (Age Normalization)
-            # ==========================================
+
             if stage == "stage2":
                 ages_target = ages / 100.0  # [0, 100] -> [0.0, 1.0]
             else:
-                ages_target = ages  # stage1 不用 age，无所谓
+                ages_target = ages
 
             optimizer.zero_grad()
             age_pred, g_logits, r_logits = model(imgs, stage=stage)
 
             if stage == "stage1":
-                # 分类任务: 包含了加权的 Race Loss
                 loss_g = criterion_gender(g_logits, genders)
                 loss_r = criterion_race(r_logits, races)
 
@@ -214,7 +209,6 @@ def main():
                 d_val = 0.0
 
             else:
-                # 回归任务: 拟合归一化后的年龄
                 loss = criterion_age(age_pred, ages_target)
                 d_val = loss.item()
 
@@ -222,7 +216,6 @@ def main():
             optimizer.step()
             total_loss += loss.item()
 
-            # 进度条显示
             with torch.no_grad():
                 acc_g = (torch.argmax(g_logits, 1) == genders).float().mean()
                 acc_r = (torch.argmax(r_logits, 1) == races).float().mean()
@@ -230,20 +223,18 @@ def main():
 
         if scheduler: scheduler.step()
 
-        # --- 验证与日志 ---
         val_mae, val_gen, val_race = validate(model, val_loader, device, stage)
         avg_train_loss = total_loss / len(train_loader)
 
         logger.info(
             f"Epoch {epoch + 1:02d} Report | Train Loss: {avg_train_loss:.4f} | Val MAE: {val_mae:.4f} | Gen Acc: {val_gen:.2%} | Race Acc: {val_race:.2%}")
 
-        # --- 保存 ---
         torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_latest.pth'))
 
         if stage == "stage2" and val_mae < best_val_mae:
             best_val_mae = val_mae
             torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_best.pth'))
-            logger.info(f"  🌟 New Best Model Saved! (MAE: {best_val_mae:.4f})")
+            logger.info(f"New Best Model Saved! (MAE: {best_val_mae:.4f})")
 
         if (epoch + 1) % 2 == 0:
             ckpt_name = f'laf_vit_epoch_{epoch + 1}.pth'
