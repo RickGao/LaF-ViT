@@ -20,7 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Visualize Random Predictions (No Filtering)")
     parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='Dataset path')
     parser.add_argument('--model_path', type=str, required=True, help='Path to best checkpoint')
-    parser.add_argument('--num_samples', type=int, default=100, help='Number of images to save')
+    parser.add_argument('--num_samples', type=int, default=1000, help='Number of images to save')
 
     # 验证集划分参数
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
