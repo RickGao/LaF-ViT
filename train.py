@@ -160,19 +160,15 @@ def main():
             model.gender_head.eval()
             model.race_head.eval()
 
-            # 冻结 Small
             for p in model.demo_backbone.parameters(): p.requires_grad = False
             for p in model.gender_head.parameters(): p.requires_grad = False
             for p in model.race_head.parameters(): p.requires_grad = False
 
-            # 解冻 Base
             for p in model.age_backbone.parameters(): p.requires_grad = True
             for p in model.age_head.parameters(): p.requires_grad = True
 
             optimizer = optim.AdamW([
-                # Backbone: 1e-5
                 {'params': model.age_backbone.parameters(), 'lr': 1e-5},
-                # Head: 4e-5
                 {'params': model.age_head.parameters(), 'lr': 4e-5}
             ], weight_decay=0.05)
 
@@ -193,7 +189,7 @@ def main():
 
 
             if stage == "stage2":
-                ages_target = ages / 100.0  # [0, 100] -> [0.0, 1.0]
+                ages_target = ages / 100.0
             else:
                 ages_target = ages
 
@@ -240,7 +236,7 @@ def main():
             ckpt_name = f'laf_vit_epoch_{epoch + 1}.pth'
             torch.save(model.state_dict(), os.path.join(ckpt_dir, ckpt_name))
 
-    logger.info("🎉 Training Complete.")
+    logger.info("Training Complete.")
 
 
 if __name__ == "__main__":
