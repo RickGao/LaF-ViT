@@ -17,18 +17,17 @@ RACE_MAP = {0: 'White', 1: 'Black', 2: 'Asian', 3: 'Indian', 4: 'Others'}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Visualize Best Predictions from Validation Set")
+    parser = argparse.ArgumentParser(description="Visualize Best Predictions from Validation Set (Individual Images)")
     parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='Dataset path')
     parser.add_argument('--model_path', type=str, required=True, help='Path to best checkpoint')
-    parser.add_argument('--num_samples', type=int, default=6, help='Number of images to show')
+    parser.add_argument('--num_samples', type=int, default=6, help='Number of images to save')
 
     # 验证集划分参数 (必须和训练一致)
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
     parser.add_argument('--val_percent', type=int, default=10, help='Validation split percentage (default: 10)')
 
-    # 输出文件名 (默认存到 sample 文件夹)
-    parser.add_argument('--output_dir', type=str, default='sample', help='Output directory')
-    parser.add_argument('--filename', type=str, default='best_samples_vis.png', help='Output filename')
+    # 输出目录 (默认存到 sample 文件夹)
+    parser.add_argument('--output_dir', type=str, default='sample_individual', help='Output directory for individual images')
 
     return parser.parse_args()
 
@@ -56,16 +55,16 @@ def main():
 
     # --- 0. 准备输出目录 ---
     os.makedirs(args.output_dir, exist_ok=True)
-    save_path = os.path.join(args.output_dir, args.filename)
 
-    print(f"🚀 Sampling Best Predictions | Device: {device} | Seed: {args.seed}")
-    print(f"📂 Output will be saved to: {save_path}")
+    print(f"🚀 Sampling Individual Best Predictions | Device: {device} | Seed: {args.seed}")
+    print(f"📂 Output folder: {args.output_dir}")
 
     # --- 1. 设置随机种子 (至关重要) ---
     set_seed(args.seed)
 
     # --- 2. 加载模型 ---
     print(f"🧠 Loading model from: {args.model_path}")
+    # 注意：这里假设你的模型不需要 use_hard 参数，如果需要请自行添加
     model = LaFViT(pretrained=False)
     state_dict = torch.load(args.model_path, map_location=device)
     model.load_state_dict(state_dict)
@@ -87,7 +86,7 @@ def main():
 
     print(f"   -> Validation set size: {len(val_subset)} images")
 
-    # Shuffle=True 这里是为了在验证集里随机挑图，而不是每次都挑前几张
+    # Shuffle=True 这里是为了在验证集里随机挑图
     loader = DataLoader(val_subset, batch_size=32, shuffle=True, num_workers=2)
 
     # --- 4. 寻找“完美”样本 ---
@@ -134,30 +133,29 @@ def main():
             if len(best_samples) >= args.num_samples:
                 break
 
-    # --- 5. 绘图与保存 ---
+    # --- 5. 独立绘图与保存 ---
     if not best_samples:
         print("⚠️ No perfect samples found in this batch. Try increasing error threshold or batch size.")
         return
 
-    print(f"🎨 Plotting {len(best_samples)} samples...")
-
-    # 动态调整图片大小
-    fig, axes = plt.subplots(1, len(best_samples), figsize=(3 * len(best_samples), 4.5))
-    if args.num_samples == 1: axes = [axes]
+    print(f"🎨 Saving {len(best_samples)} individual images to {args.output_dir}...")
 
     for idx, sample in enumerate(best_samples):
-        ax = axes[idx]
+        # 创建一个新的画布
+        plt.figure(figsize=(4, 4.5))
 
         # 显示图片
         vis_img = denormalize(sample['img'])
-        ax.imshow(vis_img)
-        ax.axis('off')
+        plt.imshow(vis_img)
+        plt.axis('off')
 
         # 准备标签文字
         p_age = sample['pred_age']
         t_age = sample['gt_age']
         p_gen = GENDER_MAP[sample['pred_gen']]
+        t_gen = GENDER_MAP[sample['gt_gen']]
         p_race = RACE_MAP[sample['pred_race']]
+        t_race = RACE_MAP[sample['gt_race']]
 
         # 构造文字：上面是预测值(GT)，下面是人口属性
         title_text = (
@@ -165,14 +163,4 @@ def main():
             f"{p_gen} | {p_race}"
         )
 
-        # 美化文字框
-        ax.set_title(title_text, fontsize=10, fontweight='bold', pad=8,
-                     bbox=dict(facecolor='white', alpha=0.9, edgecolor='gray', boxstyle='round,pad=0.3'))
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"✅ Success! Image saved to: {save_path}")
-
-
-if __name__ == "__main__":
-    main()
+        # 美化文字框，放在图片下方
