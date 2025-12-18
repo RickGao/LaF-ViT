@@ -2,7 +2,7 @@
 
 LaF-ViT is a hierarchical multi-task Vision Transformer for facial attribute estimation. It jointly predicts **gender**, **race**, and **age**, modeling **age estimation as a downstream task** softly conditioned on demographic predictions to improve robustness and fairness.
 
-![LaF-ViT Architecture](assets/arch.png)
+![LaF-ViT Architecture](asset/arch.png)
 
 ## Key Features
 - **Hierarchical multi-task learning** with age conditioned on gender/race
