@@ -21,7 +21,6 @@ def parse_args():
     parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='Dataset path')
     parser.add_argument('--model_path', type=str, required=True, help='Path to best checkpoint')
     parser.add_argument('--num_samples', type=int, default=6, help='Number of images to show')
-    parser.add_argument('--use_hard', action='store_true', help='Use hard conditioning')
 
     # 验证集划分参数 (必须和训练一致)
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
@@ -67,7 +66,7 @@ def main():
 
     # --- 2. 加载模型 ---
     print(f"🧠 Loading model from: {args.model_path}")
-    model = LaFViT(pretrained=False, use_hard_conditioning=args.use_hard)
+    model = LaFViT(pretrained=False)
     state_dict = torch.load(args.model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
