@@ -8,32 +8,26 @@ class LaFViT(nn.Module):
     def __init__(self, pretrained=True):
         super(LaFViT, self).__init__()
 
-        # =========================================================
-        # 1. 定义两个 Backbone
-        # =========================================================
 
-        # --- Stream A: Demographic (ViT-Small) ---
-        # drop_path_rate=0.1: 给小模型一点点正则化
         self.demo_backbone = timm.create_model(
             'vit_small_patch16_224',
             pretrained=pretrained,
             num_classes=0,
-            drop_path_rate=0.05  # <--- 新增
+            drop_path_rate=0.05  
         )
         self.demo_dim = 384
 
         # --- Stream B: Age (ViT-Base) ---
-        # drop_path_rate=0.2: 给大模型强力的正则化 (20%概率丢层)
         self.age_backbone = timm.create_model(
             'vit_base_patch16_224',
             pretrained=pretrained,
             num_classes=0,
-            drop_path_rate=0.2  # <--- 新增 (这非常关键！)
+            drop_path_rate=0.2  
         )
         self.age_dim = 768
 
         # =========================================================
-        # 2. 定义 Heads
+        # 2.  Heads
         # =========================================================
 
         self.gender_head = nn.Sequential(
@@ -50,17 +44,17 @@ class LaFViT(nn.Module):
         # Age Head
         combined_dim = self.age_dim + 2 + 5
         self.age_head = nn.Sequential(
-            nn.Linear(combined_dim, 512),  # 第一层变宽
+            nn.Linear(combined_dim, 512),  
             nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.3),
 
-            nn.Linear(512, 256),  # 增加一层中间层
+            nn.Linear(512, 256), 
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.3),
 
-            nn.Linear(256, 1)  # 输出层
+            nn.Linear(256, 1) 
         )
 
     def forward(self, x, stage="stage2"):
