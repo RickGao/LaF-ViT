@@ -15,23 +15,23 @@ import sys
 from datetime import datetime
 
 # ==========================================
-# 1. 命令行参数配置
+# 1. Argument Configuration
 # ==========================================
 parser = argparse.ArgumentParser(description='LaFViT Training (Weighted + Norm + DiffLR)')
-parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
-parser.add_argument('--epochs', type=int, default=30, help='训练总轮数')
-parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
-parser.add_argument('--lr', type=float, default=1e-4, help='Stage 1 的初始学习率')
-parser.add_argument('--seed', type=int, default=42, help='随机种子')
-parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
+parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='Dataset directory path')
+parser.add_argument('--epochs', type=int, default=30, help='Total number of training epochs')
+parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
+parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate for Stage 1')
+parser.add_argument('--seed', type=int, default=42, help='Random seed')
+parser.add_argument('--save_dir', type=str, default='./checkpoints', help='Model checkpoint directory')
 args = parser.parse_args()
 
 
 # ==========================================
-# 2. 辅助函数
+# 2. Helper Functions
 # ==========================================
 def setup_logger(log_dir):
-    """配置 Logger，文件名带时间戳"""
+    """Configure logger with timestamped filename"""
     os.makedirs(log_dir, exist_ok=True)
     current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_filename = f'train_log_{current_time}.txt'
@@ -61,7 +61,7 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+        torch.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
 
@@ -82,8 +82,7 @@ def validate(model, loader, device, stage):
             correct_race += (torch.argmax(r_logits, 1) == races).sum().item()
 
             if stage == "stage2":
-                # 🔥【改动点A】: 验证时需要还原年龄
-                # 模型输出是 0.3 -> 还原成 30 岁
+                # Restore age scale for validation
                 pred_age_real = age_pred * 100.0
                 total_mae += torch.sum(torch.abs(pred_age_real - ages)).item()
             else:
@@ -92,10 +91,10 @@ def validate(model, loader, device, stage):
 
 
 # ==========================================
-# 3. 主程序
+# 3. Main Training Script
 # ==========================================
 def main():
-    # --- Step A: 设置环境 ---
+    # --- Step A: Environment Setup ---
     log_dir = './log'
     ckpt_dir = args.save_dir
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -109,12 +108,12 @@ def main():
     stage2_epochs = args.epochs - stage1_epochs
 
     logger.info("=" * 40)
-    logger.info(f"🚀 Training LaFViT | Device: {device} | Seed: {args.seed}")
-    logger.info(f"📂 Log saved to: {log_path}")
-    logger.info(f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
+    logger.info(f"Training LaFViT | Device: {device} | Seed: {args.seed}")
+    logger.info(f"Log saved to: {log_path}")
+    logger.info(f"Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
     logger.info("=" * 40)
 
-    # --- Step B: 数据集加载 ---
+    # --- Step B: Dataset Loading ---
     gen = torch.Generator().manual_seed(args.seed)
     temp_ds = UTKFaceDataset(args.data_dir, transform=None)
     train_len = int(0.9 * len(temp_ds))
@@ -129,17 +128,16 @@ def main():
     train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    logger.info(f"📊 Dataset Split: Train={len(train_subset)}, Val={len(val_subset)}")
+    logger.info(f"Dataset Split: Train={len(train_subset)}, Val={len(val_subset)}")
 
-    # --- Step C: 模型初始化 ---
-    logger.info("🧠 Initializing LaFViT (Small + Base)...")
-    logger.info("Hard Condition")
+    # --- Step C: Model Initialization ---
+    logger.info("Initializing LaFViT (Small + Base)...")
+    logger.info("Hard Condition Mode")
     model = LaFViT(pretrained=True, use_hard_conditioning=True).to(device)
 
     # ==========================================
-    # 🔥【改动点B】: Loss 配置
+    # Loss Configuration
     # ==========================================
-    # criterion_age = nn.MSELoss()
     criterion_age = nn.L1Loss()
     criterion_gender = nn.CrossEntropyLoss()
 
@@ -147,7 +145,7 @@ def main():
     race_weights = torch.tensor([1.0, 1.0, 1.25, 1.2, 7.5]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
-    # 初始优化器 (Stage 1)
+    # Initial Optimizer (Stage 1)
     optimizer = optim.AdamW([
         {'params': model.demo_backbone.parameters()},
         {'params': model.gender_head.parameters()},
@@ -157,55 +155,52 @@ def main():
     scheduler = None
     best_val_mae = float('inf')
 
-    # --- Step D: 训练循环 ---
-    logger.info("🔥 Start Training Loop...")
+    # --- Step D: Training Loop ---
+    logger.info("Starting Training Loop...")
 
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
 
-        # --- 阶段切换逻辑 ---
+        # --- Stage Transition Logic ---
         if epoch < stage1_epochs:
             stage = "stage1"
-            # 冻结 Base, 激活 Small
+            # Freeze Base, Activate Small
             for p in model.age_backbone.parameters(): p.requires_grad = False
             for p in model.age_head.parameters(): p.requires_grad = False
             for p in model.demo_backbone.parameters(): p.requires_grad = True
 
         elif epoch == stage1_epochs:
-            logger.info("🧊 Switch to Stage 2: Freezing Small, Training Base...")
+            logger.info("Switch to Stage 2: Freezing Small, Training Base...")
             stage = "stage2"
 
-            # 强制 Small 进入 eval 模式，防止 BN 统计漂移
+            # Force Small into eval mode to prevent BN drift
             model.demo_backbone.eval()
             model.gender_head.eval()
             model.race_head.eval()
 
-            # 冻结 Small
+            # Freeze Small components
             for p in model.demo_backbone.parameters(): p.requires_grad = False
             for p in model.gender_head.parameters(): p.requires_grad = False
             for p in model.race_head.parameters(): p.requires_grad = False
 
-            # 解冻 Base
+            # Unfreeze Base components
             for p in model.age_backbone.parameters(): p.requires_grad = True
             for p in model.age_head.parameters(): p.requires_grad = True
 
             optimizer = optim.AdamW([
-                # Backbone: 1e-5
                 {'params': model.age_backbone.parameters(), 'lr': 1e-5},
-                # Head: 4e-5
                 {'params': model.age_head.parameters(), 'lr': 4e-5}
-            ], weight_decay=0.05)  # <--- 从 1e-2 改成 0.05，增强约束
+            ], weight_decay=0.05)
 
             scheduler = CosineAnnealingLR(optimizer, T_max=stage2_epochs, eta_min=1e-6)
         else:
             stage = "stage2"
-            # 保持 Small 为 eval 模式
             model.demo_backbone.eval()
             model.gender_head.eval()
             model.race_head.eval()
 
-        # --- Tqdm 循环 ---
+        # --- Tqdm Loop ---
         loop = tqdm(train_loader, desc=f"Ep {epoch + 1}/{args.epochs} [{stage}]")
 
         for batch in loop:
@@ -214,28 +209,23 @@ def main():
             genders = batch['gender'].to(device)
             races = batch['race'].to(device)
 
-            # ==========================================
-            # 🔥【改动点D】: 年龄归一化 (Age Normalization)
-            # ==========================================
+            # Age Normalization [0, 100] -> [0.0, 1.0]
             if stage == "stage2":
-                ages_target = ages / 100.0  # [0, 100] -> [0.0, 1.0]
+                ages_target = ages / 100.0
             else:
-                ages_target = ages  # stage1 不用 age，无所谓
+                ages_target = ages
 
             optimizer.zero_grad()
             age_pred, g_logits, r_logits = model(imgs, stage=stage)
 
             if stage == "stage1":
-                # 分类任务: 包含了加权的 Race Loss
+                # Classification tasks with weighted Race Loss
                 loss_g = criterion_gender(g_logits, genders)
                 loss_r = criterion_race(r_logits, races)
-
                 loss = 0.5 * loss_g + 2.0 * loss_r
-
                 d_val = 0.0
-
             else:
-                # 回归任务: 拟合归一化后的年龄
+                # Regression task for normalized age
                 loss = criterion_age(age_pred, ages_target)
                 d_val = loss.item()
 
@@ -243,34 +233,33 @@ def main():
             optimizer.step()
             total_loss += loss.item()
 
-            # 进度条显示
             with torch.no_grad():
                 acc_g = (torch.argmax(g_logits, 1) == genders).float().mean()
                 acc_r = (torch.argmax(r_logits, 1) == races).float().mean()
-            loop.set_postfix(loss=loss.item(), mse=d_val, g=f"{acc_g:.2f}", r=f"{acc_r:.2f}")
+            loop.set_postfix(loss=loss.item(), mae_loss=d_val, g_acc=f"{acc_g:.2f}", r_acc=f"{acc_r:.2f}")
 
         if scheduler: scheduler.step()
 
-        # --- 验证与日志 ---
+        # --- Validation and Logging ---
         val_mae, val_gen, val_race = validate(model, val_loader, device, stage)
         avg_train_loss = total_loss / len(train_loader)
 
         logger.info(
-            f"Epoch {epoch + 1:02d} Report | Train Loss: {avg_train_loss:.4f} | Val MAE: {val_mae:.4f} | Gen Acc: {val_gen:.2%} | Race Acc: {val_race:.2%}")
+            f"Epoch {epoch + 1:02d} | Train Loss: {avg_train_loss:.4f} | Val MAE: {val_mae:.4f} | Gen Acc: {val_gen:.2%} | Race Acc: {val_race:.2%}")
 
-        # --- 保存 ---
+        # --- Saving Checkpoints ---
         torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_latest.pth'))
 
         if stage == "stage2" and val_mae < best_val_mae:
             best_val_mae = val_mae
             torch.save(model.state_dict(), os.path.join(ckpt_dir, 'laf_vit_best.pth'))
-            logger.info(f"  🌟 New Best Model Saved! (MAE: {best_val_mae:.4f})")
+            logger.info(f"  New Best Model Saved! (MAE: {best_val_mae:.4f})")
 
         if (epoch + 1) % 2 == 0:
             ckpt_name = f'laf_vit_epoch_{epoch + 1}.pth'
             torch.save(model.state_dict(), os.path.join(ckpt_dir, ckpt_name))
 
-    logger.info("🎉 Training Complete.")
+    logger.info("Training Complete.")
 
 
 if __name__ == "__main__":

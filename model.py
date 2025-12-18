@@ -5,15 +5,12 @@ import timm
 
 
 class LaFViT(nn.Module):
-    # 1. 增加开关参数 use_hard_conditioning
     def __init__(self, pretrained=True, use_hard_conditioning=False):
         super(LaFViT, self).__init__()
 
-        self.use_hard_conditioning = use_hard_conditioning  # 记录开关状态
+        self.use_hard_conditioning = use_hard_conditioning
 
-        # =========================================================
-        # Backbone 和 Head 定义 (完全不变)
-        # =========================================================
+
         self.demo_backbone = timm.create_model(
             'vit_small_patch16_224', pretrained=pretrained, num_classes=0, drop_path_rate=0.05
         )
