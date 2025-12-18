@@ -17,17 +17,20 @@ RACE_MAP = {0: 'White', 1: 'Black', 2: 'Asian', 3: 'Indian', 4: 'Others'}
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Visualize Best Predictions from Validation Set (Individual Images)")
+    parser = argparse.ArgumentParser(description="Visualize Random Predictions (No Filtering)")
     parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='Dataset path')
     parser.add_argument('--model_path', type=str, required=True, help='Path to best checkpoint')
     parser.add_argument('--num_samples', type=int, default=6, help='Number of images to save')
 
-    # 验证集划分参数 (必须和训练一致)
+    # 验证集划分参数
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
-    parser.add_argument('--val_percent', type=int, default=10, help='Validation split percentage (default: 10)')
+    parser.add_argument('--val_percent', type=int, default=10, help='Validation split percentage')
 
-    # 输出目录 (默认存到 sample 文件夹)
-    parser.add_argument('--output_dir', type=str, default='sample_individual', help='Output directory for individual images')
+    # 增加 use_hard 参数以防万一
+    parser.add_argument('--use_hard', action='store_true', help='Use hard conditioning')
+
+    # 输出目录
+    parser.add_argument('--output_dir', type=str, default='sample_random', help='Output directory')
 
     return parser.parse_args()
 
@@ -41,7 +44,7 @@ def set_seed(seed):
 
 
 def denormalize(tensor):
-    """还原归一化的图片以便显示 (ImageNet Stats)"""
+    """还原归一化的图片以便显示"""
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     img = tensor.permute(1, 2, 0).cpu().numpy()
@@ -56,16 +59,16 @@ def main():
     # --- 0. 准备输出目录 ---
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print(f"🚀 Sampling Individual Best Predictions | Device: {device} | Seed: {args.seed}")
+    print(f"🚀 Sampling Random Predictions | Device: {device} | Seed: {args.seed}")
     print(f"📂 Output folder: {args.output_dir}")
 
-    # --- 1. 设置随机种子 (至关重要) ---
+    # --- 1. 设置随机种子 ---
     set_seed(args.seed)
 
     # --- 2. 加载模型 ---
     print(f"🧠 Loading model from: {args.model_path}")
-    # 注意：这里假设你的模型不需要 use_hard 参数，如果需要请自行添加
-    model = LaFViT(pretrained=False)
+    # 加上 use_hard 参数以兼容你的 Ablation 模型
+    model = LaFViT(pretrained=False, use_hard_conditioning=args.use_hard)
     state_dict = torch.load(args.model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
@@ -76,22 +79,20 @@ def main():
     full_ds = UTKFaceDataset(args.data_dir, transform=val_transforms)
     total_len = len(full_ds)
 
-    # 计算划分长度
     val_len = int(total_len * args.val_percent / 100)
     train_len = total_len - val_len
 
-    # 使用 generator 确保和训练时的随机划分一模一样
     gen = torch.Generator().manual_seed(args.seed)
     _, val_subset = random_split(full_ds, [train_len, val_len], generator=gen)
 
     print(f"   -> Validation set size: {len(val_subset)} images")
 
-    # Shuffle=True 这里是为了在验证集里随机挑图
+    # Shuffle=True 保证随机性
     loader = DataLoader(val_subset, batch_size=32, shuffle=True, num_workers=2)
 
-    # --- 4. 寻找“完美”样本 ---
-    print("🔍 Searching for high-quality predictions (Age Err < 3, Gender & Race Correct)...")
-    best_samples = []
+    # --- 4. 收集样本 (不筛选) ---
+    print("🔍 Collecting random samples (showing both Correct and Incorrect predictions)...")
+    samples = []
 
     with torch.no_grad():
         for batch in loader:
@@ -110,39 +111,28 @@ def main():
 
             # 遍历 Batch
             for i in range(len(imgs)):
-                if len(best_samples) >= args.num_samples:
+                if len(samples) >= args.num_samples:
                     break
 
-                # 筛选条件
-                age_err = abs(pred_ages[i].item() - ages[i].item())
-                g_correct = (pred_genders[i] == genders[i])
-                r_correct = (pred_races[i] == races[i])
+                # 直接添加，不再判断 if correct
+                samples.append({
+                    'img': imgs[i].cpu(),
+                    'gt_age': ages[i].item(),
+                    'pred_age': pred_ages[i].item(),
+                    'gt_gen': genders[i].item(),
+                    'pred_gen': pred_genders[i].item(),
+                    'gt_race': races[i].item(),
+                    'pred_race': pred_races[i].item()
+                })
 
-                # 挑选误差特别小 (< 3岁) 且分类全对的样本
-                if age_err < 3.0 and g_correct and r_correct:
-                    best_samples.append({
-                        'img': imgs[i].cpu(),
-                        'gt_age': ages[i].item(),
-                        'pred_age': pred_ages[i].item(),
-                        'gt_gen': genders[i].item(),
-                        'pred_gen': pred_genders[i].item(),
-                        'gt_race': races[i].item(),
-                        'pred_race': pred_races[i].item()
-                    })
-
-            if len(best_samples) >= args.num_samples:
+            if len(samples) >= args.num_samples:
                 break
 
     # --- 5. 独立绘图与保存 ---
-    if not best_samples:
-        print("⚠️ No perfect samples found in this batch. Try increasing error threshold or batch size.")
-        return
+    print(f"🎨 Saving {len(samples)} individual images to {args.output_dir}...")
 
-    print(f"🎨 Saving {len(best_samples)} individual images to {args.output_dir}...")
-
-    for idx, sample in enumerate(best_samples):
-        # 创建一个新的画布
-        plt.figure(figsize=(4, 4.5))
+    for idx, sample in enumerate(samples):
+        plt.figure(figsize=(4, 5.0))  # 稍微调高一点画布，给三行文字留空间
 
         # 显示图片
         vis_img = denormalize(sample['img'])
@@ -152,34 +142,36 @@ def main():
         # 准备标签文字
         p_age = sample['pred_age']
         t_age = sample['gt_age']
-        p_gen = GENDER_MAP[sample['pred_gen']]
-        t_gen = GENDER_MAP[sample['gt_gen']]
-        p_race = RACE_MAP[sample['pred_race']]
-        t_race = RACE_MAP[sample['gt_race']]
 
-        # 构造文字：上面是预测值(GT)，下面是人口属性
+        p_gen_str = GENDER_MAP[sample['pred_gen']]
+        t_gen_str = GENDER_MAP[sample['gt_gen']]
+
+        p_race_str = RACE_MAP[sample['pred_race']]
+        t_race_str = RACE_MAP[sample['gt_race']]
+
+        # 构造详细的三行文字：Pred vs GT
         title_text = (
-            f"Pred: {p_age:.1f} (GT: {t_age:.0f})\n"
-            f"{p_gen} | {p_race}"
+            f"Age: {p_age:.1f} (GT: {t_age:.0f})\n"
+            f"Gen: {p_gen_str} (GT: {t_gen_str})\n"
+            f"Race: {p_race_str} (GT: {t_race_str})"
         )
 
-        # 美化文字框，放在图片下方
-        plt.title(title_text, fontsize=12, fontweight='bold', pad=10,
-                     bbox=dict(facecolor='white', alpha=0.9, edgecolor='gray', boxstyle='round,pad=0.3'))
+        # 标记颜色：如果误差大或者分类错，可以用红色边框(这里简单起见只用文字)
+        # 美化文字框
+        plt.title(title_text, fontsize=11, fontweight='bold', pad=10,
+                  bbox=dict(facecolor='white', alpha=0.9, edgecolor='gray', boxstyle='round,pad=0.3'))
 
         plt.tight_layout()
 
         # 生成唯一的文件名
-        # 例如: sample_0_Age25_Male_White.png
-        filename = f"sample_{idx}_Age{t_age:.0f}_{t_gen}_{t_race}.png"
+        filename = f"sample_{idx}_GT{t_age:.0f}_{t_gen_str}_{t_race_str}.png"
         save_path = os.path.join(args.output_dir, filename)
 
-        # 保存并关闭画布以释放内存
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  -> Saved: {filename}")
 
-    print(f"✅ All {len(best_samples)} images saved successfully!")
+    print(f"✅ Done!")
 
 
 if __name__ == "__main__":
