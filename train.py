@@ -15,21 +15,17 @@ import sys
 from datetime import datetime
 
 
-parser = argparse.ArgumentParser(description='LaFViT Training (Weighted + Norm + DiffLR)')
-parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
-parser.add_argument('--epochs', type=int, default=30, help='训练总轮数')
+parser = argparse.ArgumentParser(description='LaFViT Training')
+parser.add_argument('--data_dir', type=str, default='./data/UTKFace')
+parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--batch_size', type=int, default=64, help='Batch Size')
-parser.add_argument('--lr', type=float, default=1e-4, help='Stage 1 的初始学习率')
-parser.add_argument('--seed', type=int, default=42, help='随机种子')
-parser.add_argument('--save_dir', type=str, default='./checkpoints', help='模型保存路径')
+parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--save_dir', type=str, default='./checkpoints')
 args = parser.parse_args()
 
 
-# ==========================================
-# 2. 辅助函数
-# ==========================================
 def setup_logger(log_dir):
-    """配置 Logger，文件名带时间戳"""
     os.makedirs(log_dir, exist_ok=True)
     current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_filename = f'train_log_{current_time}.txt'
@@ -80,8 +76,6 @@ def validate(model, loader, device, stage):
             correct_race += (torch.argmax(r_logits, 1) == races).sum().item()
 
             if stage == "stage2":
-                # 🔥【改动点A】: 验证时需要还原年龄
-                # 模型输出是 0.3 -> 还原成 30 岁
                 pred_age_real = age_pred * 100.0
                 total_mae += torch.sum(torch.abs(pred_age_real - ages)).item()
             else:
@@ -89,11 +83,9 @@ def validate(model, loader, device, stage):
     return (total_mae / count), (correct_gen / count), (correct_race / count)
 
 
-# ==========================================
-# 3. 主程序
-# ==========================================
+
 def main():
-    # --- Step A: 设置环境 ---
+
     log_dir = './log'
     ckpt_dir = args.save_dir
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -112,7 +104,6 @@ def main():
     logger.info(f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
     logger.info("=" * 40)
 
-    # --- Step B: 数据集加载 ---
     gen = torch.Generator().manual_seed(args.seed)
     temp_ds = UTKFaceDataset(args.data_dir, transform=None)
     train_len = int(0.9 * len(temp_ds))
@@ -129,14 +120,10 @@ def main():
 
     logger.info(f"📊 Dataset Split: Train={len(train_subset)}, Val={len(val_subset)}")
 
-    # --- Step C: 模型初始化 ---
     logger.info("🧠 Initializing LaFViT (Small + Base)...")
     model = LaFViT(pretrained=True).to(device)
 
-    # ==========================================
-    # 🔥【改动点B】: Loss 配置
-    # ==========================================
-    # criterion_age = nn.MSELoss()
+
     criterion_age = nn.L1Loss()
     criterion_gender = nn.CrossEntropyLoss()
 
@@ -144,7 +131,6 @@ def main():
     race_weights = torch.tensor([1.0, 1.0, 1.25, 1.2, 7.5]).to(device)
     criterion_race = nn.CrossEntropyLoss(weight=race_weights)
 
-    # 初始优化器 (Stage 1)
     optimizer = optim.AdamW([
         {'params': model.demo_backbone.parameters()},
         {'params': model.gender_head.parameters()},
@@ -154,26 +140,22 @@ def main():
     scheduler = None
     best_val_mae = float('inf')
 
-    # --- Step D: 训练循环 ---
     logger.info("🔥 Start Training Loop...")
 
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
 
-        # --- 阶段切换逻辑 ---
         if epoch < stage1_epochs:
             stage = "stage1"
-            # 冻结 Base, 激活 Small
             for p in model.age_backbone.parameters(): p.requires_grad = False
             for p in model.age_head.parameters(): p.requires_grad = False
             for p in model.demo_backbone.parameters(): p.requires_grad = True
 
         elif epoch == stage1_epochs:
-            logger.info("🧊 Switch to Stage 2: Freezing Small, Training Base...")
+            logger.info("Switch to Stage 2: Freezing Small, Training Base...")
             stage = "stage2"
 
-            # 强制 Small 进入 eval 模式，防止 BN 统计漂移
             model.demo_backbone.eval()
             model.gender_head.eval()
             model.race_head.eval()
