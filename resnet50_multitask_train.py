@@ -7,7 +7,6 @@ from tqdm import tqdm
 import random
 import numpy as np
 
-# ===== 直接用你现有的 dataset.py =====
 from dataset import UTKFaceDataset, train_transforms, val_transforms
 
 
