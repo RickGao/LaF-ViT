@@ -25,10 +25,6 @@ def parse_args():
     # 验证集划分参数
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
     parser.add_argument('--val_percent', type=int, default=10, help='Validation split percentage')
-
-    # 增加 use_hard 参数以防万一
-    parser.add_argument('--use_hard', action='store_true', help='Use hard conditioning')
-
     # 输出目录
     parser.add_argument('--output_dir', type=str, default='sample_random', help='Output directory')
 
@@ -68,7 +64,7 @@ def main():
     # --- 2. 加载模型 ---
     print(f"🧠 Loading model from: {args.model_path}")
     # 加上 use_hard 参数以兼容你的 Ablation 模型
-    model = LaFViT(pretrained=False, use_hard_conditioning=args.use_hard)
+    model = LaFViT(pretrained=False)
     state_dict = torch.load(args.model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
