@@ -99,9 +99,9 @@ def main():
     stage2_epochs = args.epochs - stage1_epochs
 
     logger.info("=" * 40)
-    logger.info(f"🚀 Training LaFViT | Device: {device} | Seed: {args.seed}")
-    logger.info(f"📂 Log saved to: {log_path}")
-    logger.info(f"⚙️ Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
+    logger.info(f"Training LaFViT | Device: {device} | Seed: {args.seed}")
+    logger.info(f"Log saved to: {log_path}")
+    logger.info(f"Config: Epochs={args.epochs} (S1={stage1_epochs}, S2={stage2_epochs})")
     logger.info("=" * 40)
 
     gen = torch.Generator().manual_seed(args.seed)
@@ -118,9 +118,9 @@ def main():
     train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    logger.info(f"📊 Dataset Split: Train={len(train_subset)}, Val={len(val_subset)}")
+    logger.info(f"Dataset Split: Train={len(train_subset)}, Val={len(val_subset)}")
 
-    logger.info("🧠 Initializing LaFViT (Small + Base)...")
+    logger.info("Initializing LaFViT (Small + Base)...")
     model = LaFViT(pretrained=True).to(device)
 
 

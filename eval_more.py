@@ -52,7 +52,7 @@ def main():
     print(f" Evaluation | Device: {device} | Seed: {args.seed}")
 
     print(f" Loading model: {args.model_path}")
-    model = LaFViT(pretrained=False, use_hard_conditioning=args.use_hard)
+    model = LaFViT(pretrained=False)
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     model.to(device)
     model.eval()
