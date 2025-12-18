@@ -164,3 +164,23 @@ def main():
         )
 
         # 美化文字框，放在图片下方
+        plt.title(title_text, fontsize=12, fontweight='bold', pad=10,
+                     bbox=dict(facecolor='white', alpha=0.9, edgecolor='gray', boxstyle='round,pad=0.3'))
+
+        plt.tight_layout()
+
+        # 生成唯一的文件名
+        # 例如: sample_0_Age25_Male_White.png
+        filename = f"sample_{idx}_Age{t_age:.0f}_{t_gen}_{t_race}.png"
+        save_path = os.path.join(args.output_dir, filename)
+
+        # 保存并关闭画布以释放内存
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"  -> Saved: {filename}")
+
+    print(f"✅ All {len(best_samples)} images saved successfully!")
+
+
+if __name__ == "__main__":
+    main()
