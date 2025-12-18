@@ -29,7 +29,7 @@ def parse_loss_with_stage(log_path):
 
     return epochs, losses, stage2_epoch
 
-log_path = "./log/train_log_20251213_mae.txt"
+log_path = "./log/train_log_final.txt"
 epochs, losses, stage2_epoch = parse_loss_with_stage(log_path)
 
 # ---- Split stages

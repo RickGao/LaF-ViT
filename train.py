@@ -14,9 +14,7 @@ import logging
 import sys
 from datetime import datetime
 
-# ==========================================
-# 1. 命令行参数配置
-# ==========================================
+
 parser = argparse.ArgumentParser(description='LaFViT Training (Weighted + Norm + DiffLR)')
 parser.add_argument('--data_dir', type=str, default='./data/UTKFace', help='数据集文件夹路径')
 parser.add_argument('--epochs', type=int, default=30, help='训练总轮数')
