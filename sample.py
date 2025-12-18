@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42, help='Random seed for split')
     parser.add_argument('--val_percent', type=int, default=10, help='Validation split percentage')
     # 输出目录
-    parser.add_argument('--output_dir', type=str, default='sample_random', help='Output directory')
+    parser.add_argument('--output_dir', type=str, default='sample', help='Output directory')
 
     return parser.parse_args()
 
