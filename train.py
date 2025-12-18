@@ -140,7 +140,7 @@ def main():
     scheduler = None
     best_val_mae = float('inf')
 
-    logger.info("🔥 Start Training Loop...")
+    logger.info("Start Training Loop...")
 
     for epoch in range(args.epochs):
         model.train()
