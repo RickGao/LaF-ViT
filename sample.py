@@ -49,19 +49,19 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print(f"🚀 Sampling Random Predictions | Device: {device} | Seed: {args.seed}")
-    print(f"📂 Output folder: {args.output_dir}")
+    print(f" Sampling Random Predictions | Device: {device} | Seed: {args.seed}")
+    print(f" Output folder: {args.output_dir}")
 
     set_seed(args.seed)
 
-    print(f"🧠 Loading model from: {args.model_path}")
+    print(f" Loading model from: {args.model_path}")
     model = LaFViT(pretrained=False)
     state_dict = torch.load(args.model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
-    print(f"📊 Reconstructing Validation Set (Split: {args.val_percent}%)")
+    print(f" Reconstructing Validation Set (Split: {args.val_percent}%)")
     full_ds = UTKFaceDataset(args.data_dir, transform=val_transforms)
     total_len = len(full_ds)
 
@@ -75,7 +75,7 @@ def main():
 
     loader = DataLoader(val_subset, batch_size=32, shuffle=True, num_workers=2)
 
-    print("🔍 Collecting random samples (showing both Correct and Incorrect predictions)...")
+    print(" Collecting random samples (showing both Correct and Incorrect predictions)...")
     samples = []
 
     with torch.no_grad():
@@ -108,7 +108,7 @@ def main():
             if len(samples) >= args.num_samples:
                 break
 
-    print(f"🎨 Saving {len(samples)} individual images to {args.output_dir}...")
+    print(f" Saving {len(samples)} individual images to {args.output_dir}...")
 
     for idx, sample in enumerate(samples):
         plt.figure(figsize=(4, 5.0))
@@ -144,7 +144,7 @@ def main():
         plt.close()
         print(f"  -> Saved: {filename}")
 
-    print(f"✅ Done!")
+    print(f" Done!")
 
 
 if __name__ == "__main__":
