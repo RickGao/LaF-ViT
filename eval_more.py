@@ -49,9 +49,9 @@ def main():
     set_seed(args.seed)
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    print(f"🚀 Evaluation | Device: {device} | Seed: {args.seed}")
+    print(f" Evaluation | Device: {device} | Seed: {args.seed}")
 
-    print(f"📂 Loading model: {args.model_path}")
+    print(f" Loading model: {args.model_path}")
     model = LaFViT(pretrained=False, use_hard_conditioning=args.use_hard)
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     model.to(device)
@@ -65,10 +65,10 @@ def main():
         val_len = total_len - train_len
         gen = torch.Generator().manual_seed(args.seed)
         _, val_subset = random_split(full_dataset, [train_len, val_len], generator=gen)
-        print(f"⚠️ Mode: Validation Set Only ({args.val_percent}%)")
+        print(f" Mode: Validation Set Only ({args.val_percent}%)")
         dataset = val_subset
     else:
-        print("⚠️ Mode: Full Dataset")
+        print(" Mode: Full Dataset")
         dataset = full_dataset
 
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)
