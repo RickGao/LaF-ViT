@@ -7,7 +7,6 @@ from tqdm import tqdm
 import random
 import numpy as np
 
-# ===== 直接用你现有的 dataset.py =====
 from dataset import UTKFaceDataset, train_transforms, val_transforms
 
 
@@ -161,10 +160,11 @@ def main():
         if val_mae < best_mae:
             best_mae = val_mae
             torch.save(model.state_dict(), "resnet50_multitask_best.pth")
-            print(f"  🌟 New Best MAE: {best_mae:.2f}")
+            print(f"   New Best MAE: {best_mae:.2f}")
 
-    print("✅ Training finished")
+    print(" Training finished")
 
 
 if __name__ == "__main__":
     main()
+
